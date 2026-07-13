@@ -291,6 +291,63 @@
             color: var(--accent2);
         }
 
+        /* Mode toggle */
+        .mode-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .mode-toggle-label {
+            font-size: 0.8rem;
+            color: var(--muted);
+            font-weight: 500;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+
+        .toggle-switch input { display: none; }
+
+        .toggle-slider {
+            position: absolute;
+            inset: 0;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .toggle-slider::before {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            left: 3px;
+            top: 3px;
+            background: var(--muted);
+            border-radius: 50%;
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background: rgba(108, 99, 255, 0.2);
+            border-color: var(--accent);
+        }
+
+        .toggle-switch input:checked + .toggle-slider::before {
+            transform: translateX(20px);
+            background: var(--accent);
+        }
+
+        .mode-toggle-label.active { color: var(--text); }
+
         /* Scrollable history */
         .history-scroll {
             max-height: 320px;
@@ -325,6 +382,16 @@
         {% endif %}
     {% endwith %}
 
+
+        <!-- Mode toggle -->
+        <div class="mode-toggle">
+            <span class="mode-toggle-label" id="labelManual">Ручной ввод</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="modeToggle">
+                <span class="toggle-slider"></span>
+            </label>
+            <span class="mode-toggle-label" id="labelAuto">Автосинхронизация</span>
+        </div>
 
         <!-- Stats -->
         <div class="row g-3 mb-4">
@@ -394,18 +461,30 @@
             <!-- Update Balance -->
             <div class="col-md-6">
                 <div class="card-custom h-100">
-                    <div class="section-title">Обновить баланс</div>
-                    <form method="POST" action="/update-balance">
-                        <div class="mb-3">
-                            <label class="form-label">Дата</label>
-                            <input type="date" name="date" class="form-control" value="{{ today }}" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Текущий баланс счёта (₽)</label>
-                            <input type="text" name="balance" class="form-control" placeholder="200 000" required>
-                        </div>
-                        <button type="submit" class="btn-primary-custom">Сохранить баланс</button>
-                    </form>
+                    <div id="manualBalanceSection">
+                        <div class="section-title">Обновить баланс</div>
+                        <form method="POST" action="/update-balance">
+                            <div class="mb-3">
+                                <label class="form-label">Дата</label>
+                                <input type="date" name="date" class="form-control" value="{{ today }}" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Текущий баланс счёта (₽)</label>
+                                <input type="text" name="balance" class="form-control" placeholder="200 000" required>
+                            </div>
+                            <button type="submit" class="btn-primary-custom">Сохранить баланс</button>
+                        </form>
+                    </div>
+                    <div id="autoSyncSection" style="display:none;">
+                        <div class="section-title">T-Invest · Автосинхронизация</div>
+                        <p style="font-size:0.85rem; color:var(--muted); margin-bottom:1rem;">
+                            Баланс и операции подтянутся автоматически из брокерского счёта.
+                        </p>
+                        <button class="btn-primary-custom" id="syncBtn" onclick="syncTinkoff()" style="background: var(--accent);">
+                            Синхронизировать сейчас
+                        </button>
+                        <div id="syncResult" style="font-size:0.8rem; margin-top:0.75rem; display:none;"></div>
+                    </div>
                 </div>
             </div>
 
@@ -532,6 +611,15 @@
                             </tbody>
                         </table>
                     </div>
+                    {% if withdrawals %}
+                    <div style="display:flex; justify-content:space-between; padding: 0.75rem 0.75rem 0; border-top: 1px solid var(--border); margin-top: 0.5rem; font-size: 0.8rem;">
+                        <span style="color: var(--muted);">Итого:</span>
+                        <span style="display:flex; gap:1.5rem;">
+                            <span>Пополнено: <span style="color: var(--accent2); font-weight:600;">{{ stats.total_deposited | fmt }} ₽</span></span>
+                            <span>Выведено: <span style="color: var(--danger); font-weight:600;">{{ stats.total_withdrawn | fmt }} ₽</span></span>
+                        </span>
+                    </div>
+                    {% endif %}
                     {% else %}
                     <div class="no-data">Нет операций</div>
                     {% endif %}
@@ -543,6 +631,61 @@
 </div>
 
 <script>
+    // Mode toggle
+    const modeToggle = document.getElementById('modeToggle');
+    const manualSection = document.getElementById('manualBalanceSection');
+    const autoSection = document.getElementById('autoSyncSection');
+    const labelManual = document.getElementById('labelManual');
+    const labelAuto = document.getElementById('labelAuto');
+
+    function applyMode(isAuto) {
+        manualSection.style.display = isAuto ? 'none' : 'block';
+        autoSection.style.display = isAuto ? 'block' : 'none';
+        labelManual.classList.toggle('active', !isAuto);
+        labelAuto.classList.toggle('active', isAuto);
+        localStorage.setItem('syncMode', isAuto ? 'auto' : 'manual');
+    }
+
+    modeToggle.addEventListener('change', () => applyMode(modeToggle.checked));
+
+    const savedMode = localStorage.getItem('syncMode') === 'auto';
+    modeToggle.checked = savedMode;
+    applyMode(savedMode);
+
+    // T-Invest sync
+    function syncTinkoff() {
+        const btn = document.getElementById('syncBtn');
+        const result = document.getElementById('syncResult');
+        btn.textContent = 'Синхронизация...';
+        btn.disabled = true;
+        result.style.display = 'none';
+
+        fetch('/sync-tinkoff', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    result.style.color = 'var(--danger)';
+                    result.textContent = 'Ошибка: ' + data.error;
+                    result.style.display = 'block';
+                } else {
+                    result.style.color = 'var(--accent2)';
+                    result.textContent = `Баланс обновлён: ${data.balance.toLocaleString('ru-RU', {minimumFractionDigits: 2})} ₽` +
+                        (data.new_operations ? ` · Новых операций: ${data.new_operations}` : '');
+                    result.style.display = 'block';
+                    setTimeout(() => location.reload(), 1500);
+                }
+            })
+            .catch(() => {
+                result.style.color = 'var(--danger)';
+                result.textContent = 'Ошибка соединения';
+                result.style.display = 'block';
+            })
+            .finally(() => {
+                btn.textContent = 'Синхронизировать с T-Invest';
+                btn.disabled = false;
+            });
+    }
+
     // Type toggle + commission visibility
     function parseRub(str) {
         return parseFloat((str || '').replace(/\s/g, '').replace(',', '.')) || 0;
