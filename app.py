@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 import sqlite3
-from datetime import date, timedelta, datetime
+import requests as http_requests
+from datetime import date, timedelta, datetime, timezone
 
 app = Flask(__name__)
 app.secret_key = 'finance-tracker-secret'
@@ -36,8 +37,9 @@ def init_db():
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA journal_mode=WAL')
     return conn
 
 
@@ -271,6 +273,136 @@ def chart_data():
         types.append('weekend' if d.weekday() >= 5 else 'weekday')
 
     return jsonify({'labels': labels, 'values': values, 'cumulative': cumulative, 'types': types})
+
+
+TINKOFF_BASE = 'https://invest-public-api.tinkoff.ru/rest'
+
+
+def t_request(path, body, token):
+    r = http_requests.post(
+        f'{TINKOFF_BASE}{path}',
+        json=body,
+        headers={'Authorization': f'Bearer {token}'},
+        timeout=10
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def money_value(mv):
+    """Convert T-Invest MoneyValue {units, nano} to float."""
+    return float(mv.get('units', 0)) + mv.get('nano', 0) / 1e9
+
+
+@app.route('/tinkoff-accounts')
+def tinkoff_accounts():
+    try:
+        from config import T_INVEST_TOKEN
+    except ImportError:
+        return jsonify({'error': 'config.py не найден'}), 400
+
+    if not T_INVEST_TOKEN:
+        return jsonify({'error': 'Токен не указан в config.py'}), 400
+
+    try:
+        resp = t_request(
+            '/tinkoff.public.invest.api.contract.v1.UsersService/GetAccounts',
+            {}, T_INVEST_TOKEN
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    accounts = [
+        {'id': a['id'], 'name': a.get('name') or a['id']}
+        for a in resp.get('accounts', [])
+    ]
+    return jsonify({'accounts': accounts})
+
+
+@app.route('/sync-tinkoff', methods=['POST'])
+def sync_tinkoff():
+    try:
+        from config import T_INVEST_TOKEN, T_INVEST_ACCOUNT_ID
+    except ImportError:
+        return jsonify({'error': 'config.py не найден'}), 400
+
+    if not T_INVEST_TOKEN:
+        return jsonify({'error': 'Токен не указан в config.py'}), 400
+
+    if not T_INVEST_ACCOUNT_ID:
+        return jsonify({'error': 'ID счёта не указан в config.py'}), 400
+
+    try:
+        # Текущий баланс портфеля
+        portfolio = t_request(
+            '/tinkoff.public.invest.api.contract.v1.OperationsService/GetPortfolio',
+            {'accountId': T_INVEST_ACCOUNT_ID, 'currency': 'RUB'},
+            T_INVEST_TOKEN
+        )
+        total = money_value(portfolio['totalAmountPortfolio'])
+        today_str = date.today().isoformat()
+
+        db = get_db()
+
+        # Сохранить баланс
+        existing = db.execute(
+            'SELECT id FROM balance_entries WHERE date = ?', (today_str,)
+        ).fetchone()
+        if existing:
+            db.execute('UPDATE balance_entries SET balance = ? WHERE date = ?', (total, today_str))
+        else:
+            db.execute('INSERT INTO balance_entries (date, balance) VALUES (?, ?)', (today_str, total))
+
+        # Операции за последние 90 дней
+        from_dt = (datetime.now(timezone.utc) - timedelta(days=90)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        to_dt = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        ops_resp = t_request(
+            '/tinkoff.public.invest.api.contract.v1.OperationsService/GetOperations',
+            {
+                'accountId': T_INVEST_ACCOUNT_ID,
+                'from': from_dt,
+                'to': to_dt,
+                'state': 'OPERATION_STATE_EXECUTED',
+            },
+            T_INVEST_TOKEN
+        )
+
+        new_ops = 0
+        for op in ops_resp.get('operations', []):
+            op_type = op.get('operationType', '')
+            if op_type not in ('OPERATION_TYPE_INPUT', 'OPERATION_TYPE_OUTPUT'):
+                continue
+
+            op_id = op['id']
+            already = db.execute(
+                "SELECT id FROM withdrawals WHERE note LIKE ?", (f'%[t:{op_id}]%',)
+            ).fetchone()
+            if already:
+                continue
+
+            amount = abs(money_value(op.get('payment', {})))
+            tx_type = 'deposit' if op_type == 'OPERATION_TYPE_INPUT' else 'withdrawal'
+            op_date = op['date'][:10]
+
+            db.execute(
+                'INSERT INTO withdrawals (date, amount, type, note) VALUES (?, ?, ?, ?)',
+                (op_date, amount, tx_type, f'T-Invest [t:{op_id}]')
+            )
+            new_ops += 1
+
+        db.commit()
+        db.close()
+
+        return jsonify({
+            'success': True,
+            'balance': round(total, 2),
+            'date': today_str,
+            'new_operations': new_ops,
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
