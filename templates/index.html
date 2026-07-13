@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finance Tracker</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --surface2: #222537;
+            --border: #2e3148;
+            --accent: #6c63ff;
+            --accent2: #4ade80;
+            --text: #e2e8f0;
+            --muted: #64748b;
+            --danger: #f87171;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            min-height: 100vh;
+        }
+
+        .navbar {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 0;
+        }
+
+        .navbar-brand {
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: var(--accent) !important;
+            letter-spacing: -0.5px;
+        }
+
+        /* Cards */
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.2s;
+        }
+
+        .stat-card:hover { border-color: var(--accent); }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            border-radius: 16px 16px 0 0;
+        }
+
+        .stat-card.purple::before { background: var(--accent); }
+        .stat-card.green::before  { background: var(--accent2); }
+        .stat-card.red::before    { background: var(--danger); }
+
+        .stat-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--muted);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 0.4rem;
+        }
+
+        .stat-net {
+            font-size: 0.85rem;
+            color: var(--muted);
+        }
+
+        .stat-net span {
+            color: var(--accent2);
+            font-weight: 600;
+        }
+
+        .card-custom {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+        }
+
+        .section-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--muted);
+            margin-bottom: 1.2rem;
+        }
+
+        .form-control, .form-select {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 10px;
+            padding: 0.6rem 0.9rem;
+            font-size: 0.9rem;
+        }
+
+        .form-control:focus, .form-select:focus {
+            background: var(--surface2);
+            border-color: var(--accent);
+            color: var(--text);
+            box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.15);
+        }
+
+        .form-control::placeholder { color: var(--muted); }
+
+        .form-label {
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--muted);
+            margin-bottom: 0.35rem;
+        }
+
+        .btn-primary-custom {
+            background: var(--accent);
+            border: none;
+            color: #fff;
+            border-radius: 10px;
+            padding: 0.6rem 1.2rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: opacity 0.15s;
+            width: 100%;
+        }
+
+        .btn-primary-custom:hover { opacity: 0.85; }
+
+        .btn-danger-custom {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            border-radius: 8px;
+            padding: 0.25rem 0.55rem;
+            font-size: 0.75rem;
+            transition: all 0.15s;
+        }
+
+        .btn-danger-custom:hover {
+            background: var(--danger);
+            border-color: var(--danger);
+            color: #fff;
+        }
+
+        .history-table {
+            width: 100%;
+            font-size: 0.875rem;
+        }
+
+        .history-table th {
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--muted);
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .history-table td {
+            padding: 0.65rem 0.75rem;
+            border-bottom: 1px solid rgba(46, 49, 72, 0.5);
+            vertical-align: middle;
+        }
+
+        .history-table tr:last-child td { border-bottom: none; }
+        .history-table tr:hover td { background: rgba(108, 99, 255, 0.04); }
+
+        .badge-date {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--muted);
+            border-radius: 6px;
+            padding: 0.2rem 0.5rem;
+            font-size: 0.75rem;
+            font-family: monospace;
+        }
+
+        .amount-positive { color: var(--accent2); font-weight: 600; }
+        .amount-withdrawal { color: var(--danger); font-weight: 600; }
+        .amount-balance { color: var(--text); font-weight: 600; }
+
+        .alert-custom {
+            border-radius: 10px;
+            border: none;
+            font-size: 0.875rem;
+            padding: 0.75rem 1rem;
+        }
+
+        .alert-success-custom {
+            background: rgba(74, 222, 128, 0.1);
+            color: var(--accent2);
+            border: 1px solid rgba(74, 222, 128, 0.2);
+        }
+
+        .alert-error-custom {
+            background: rgba(248, 113, 113, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(248, 113, 113, 0.2);
+        }
+
+        .no-data {
+            text-align: center;
+            color: var(--muted);
+            padding: 2rem;
+            font-size: 0.875rem;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 200px;
+        }
+
+        .divider {
+            border-color: var(--border);
+            margin: 1.2rem 0;
+        }
+
+        .note-text {
+            color: var(--muted);
+            font-size: 0.8rem;
+            font-style: italic;
+        }
+
+        /* Type toggle */
+        .tx-toggle { display: flex; gap: 0.5rem; }
+        .tx-option { cursor: pointer; flex: 1; }
+        .tx-option input { display: none; }
+
+        .tx-label {
+            display: block;
+            text-align: center;
+            padding: 0.55rem;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--muted);
+            background: var(--surface2);
+            transition: all 0.15s;
+        }
+
+        .tx-option input:checked + .withdrawal-label {
+            background: rgba(248, 113, 113, 0.15);
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+
+        .tx-option input:checked + .deposit-label {
+            background: rgba(74, 222, 128, 0.15);
+            border-color: var(--accent2);
+            color: var(--accent2);
+        }
+
+        /* Operation badges */
+        .tx-badge {
+            font-size: 0.72rem;
+            font-weight: 600;
+            padding: 0.2rem 0.5rem;
+            border-radius: 6px;
+        }
+
+        .tx-badge-withdrawal {
+            background: rgba(248, 113, 113, 0.1);
+            color: var(--danger);
+        }
+
+        .tx-badge-deposit {
+            background: rgba(74, 222, 128, 0.1);
+            color: var(--accent2);
+        }
+
+        /* Scrollable history */
+        .history-scroll {
+            max-height: 320px;
+            overflow-y: auto;
+        }
+
+        .history-scroll::-webkit-scrollbar { width: 4px; }
+        .history-scroll::-webkit-scrollbar-track { background: transparent; }
+        .history-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+
+    </style>
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="container">
+        <span class="navbar-brand">Finance Tracker</span>
+        <span style="color: var(--muted); font-size: 0.8rem;">{{ today }}</span>
+    </div>
+</nav>
+
+<div class="container py-4">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert-custom {% if category == 'error' %}alert-error-custom{% else %}alert-success-custom{% endif %} mb-3">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+
+        <!-- Stats -->
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+                <div class="stat-card purple">
+                    <div class="stat-label">За неделю</div>
+                    <div class="stat-value" style="color: var(--accent);">{{ stats.week | fmt }} ₽</div>
+                    <div class="stat-net">После налога: <span>{{ stats.week_net | fmt }} ₽</span></div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card green">
+                    <div class="stat-label">За месяц</div>
+                    <div class="stat-value" style="color: var(--accent2);">{{ stats.month | fmt }} ₽</div>
+                    <div class="stat-net">После налога: <span>{{ stats.month_net | fmt }} ₽</span></div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card purple">
+                    <div class="stat-label">Неделя − налог 13%</div>
+                    <div class="stat-value" style="color: var(--accent); font-size: 1.4rem;">{{ stats.week_net | fmt }} ₽</div>
+                    <div class="stat-net">Налог: <span style="color: var(--danger);">{{ (stats.week - stats.week_net) | fmt }} ₽</span></div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card green">
+                    <div class="stat-label">Месяц − налог 13%</div>
+                    <div class="stat-value" style="color: var(--accent2); font-size: 1.4rem;">{{ stats.month_net | fmt }} ₽</div>
+                    <div class="stat-net">Налог: <span style="color: var(--danger);">{{ (stats.month - stats.month_net) | fmt }} ₽</span></div>
+                </div>
+            </div>
+            <div class="col-12 col-md-4">
+                <div class="stat-card green">
+                    <div class="stat-label">Заработано за всё время</div>
+                    <div class="stat-value" style="color: var(--accent2); font-size: 1.6rem;">{{ stats.total_earned | fmt }} ₽</div>
+                    <div class="stat-net">Без учёта снятий и пополнений</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4">
+                <div class="stat-card red">
+                    <div class="stat-label">Всего выведено</div>
+                    <div class="stat-value" style="color: var(--danger); font-size: 1.6rem;">{{ stats.total_withdrawn | fmt }} ₽</div>
+                    <div class="stat-net">Сумма всех снятий</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4">
+                <div class="stat-card purple">
+                    <div class="stat-label">Всего пополнено</div>
+                    <div class="stat-value" style="color: var(--accent); font-size: 1.6rem;">{{ stats.total_deposited | fmt }} ₽</div>
+                    <div class="stat-net">Сумма всех пополнений</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chart -->
+        {% if has_data %}
+        <div class="card-custom mb-4">
+            <div class="section-title">Заработок по дням (последние 30 дней)</div>
+            <div class="chart-container">
+                <canvas id="earningsChart"></canvas>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Forms -->
+        <div class="row g-3 mb-4">
+            <!-- Update Balance -->
+            <div class="col-md-6">
+                <div class="card-custom h-100">
+                    <div class="section-title">Обновить баланс</div>
+                    <form method="POST" action="/update-balance">
+                        <div class="mb-3">
+                            <label class="form-label">Дата</label>
+                            <input type="date" name="date" class="form-control" value="{{ today }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Текущий баланс счёта (₽)</label>
+                            <input type="text" name="balance" class="form-control" placeholder="200 000" required>
+                        </div>
+                        <button type="submit" class="btn-primary-custom">Сохранить баланс</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Withdraw / Deposit -->
+            <div class="col-md-6">
+                <div class="card-custom h-100">
+                    <div class="section-title">Снятие / Пополнение</div>
+                    <form method="POST" action="/withdraw">
+                        <div class="mb-3">
+                            <label class="form-label">Тип операции</label>
+                            <div class="tx-toggle">
+                                <label class="tx-option">
+                                    <input type="radio" name="type" value="withdrawal" checked>
+                                    <span class="tx-label withdrawal-label">Снятие</span>
+                                </label>
+                                <label class="tx-option">
+                                    <input type="radio" name="type" value="deposit">
+                                    <span class="tx-label deposit-label">Пополнение</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Дата</label>
+                            <input type="date" name="date" class="form-control" value="{{ today }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Сумма (₽)</label>
+                            <input type="text" name="amount" id="txAmount" class="form-control" placeholder="50 000" required>
+                        </div>
+                        <div class="mb-3" id="commissionRow">
+                            <label class="form-label">Комиссия (₽)</label>
+                            <input type="text" id="txCommission" class="form-control" placeholder="0">
+                            <div id="txNet" style="font-size:0.8rem; color: var(--accent2); margin-top:0.4rem; display:none;"></div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Комментарий (опционально)</label>
+                            <input type="text" name="note" class="form-control" placeholder="Вывод на карту">
+                        </div>
+                        <button type="submit" class="btn-primary-custom" id="txSubmitBtn" style="background: #374151;">Записать снятие</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- History -->
+        <div class="row g-3">
+            <!-- Balance entries -->
+            <div class="col-md-6">
+                <div class="card-custom">
+                    <div class="section-title">История балансов</div>
+                    {% if entries %}
+                    <div class="history-scroll">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Дата</th>
+                                    <th>Баланс</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for e in entries %}
+                                <tr>
+                                    <td><span class="badge-date">{{ e.date }}</span></td>
+                                    <td><span class="amount-balance">{{ e.balance | fmt }} ₽</span></td>
+                                    <td>
+                                        <form method="POST" action="/delete-entry/{{ e.id }}" style="display:inline;" onsubmit="return confirm('Удалить запись?')">
+                                            <button type="submit" class="btn-danger-custom">✕</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="no-data">Нет записей</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Withdrawals -->
+            <div class="col-md-6">
+                <div class="card-custom">
+                    <div class="section-title">История операций</div>
+                    {% if withdrawals %}
+                    <div class="history-scroll">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Дата</th>
+                                    <th>Тип</th>
+                                    <th>Сумма</th>
+                                    <th>Комментарий</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for w in withdrawals %}
+                                <tr>
+                                    <td><span class="badge-date">{{ w.date }}</span></td>
+                                    <td>
+                                        {% if w.type == 'deposit' %}
+                                            <span class="tx-badge tx-badge-deposit">Пополнение</span>
+                                        {% else %}
+                                            <span class="tx-badge tx-badge-withdrawal">Снятие</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if w.type == 'deposit' %}
+                                            <span class="amount-positive">+{{ w.amount | fmt }} ₽</span>
+                                        {% else %}
+                                            <span class="amount-withdrawal">−{{ w.amount | fmt }} ₽</span>
+                                        {% endif %}
+                                    </td>
+                                    <td><span class="note-text">{{ w.note or '—' }}</span></td>
+                                    <td>
+                                        <form method="POST" action="/delete-withdrawal/{{ w.id }}" style="display:inline;" onsubmit="return confirm('Удалить запись?')">
+                                            <button type="submit" class="btn-danger-custom">✕</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="no-data">Нет операций</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+
+</div>
+
+<script>
+    // Type toggle + commission visibility
+    function parseRub(str) {
+        return parseFloat((str || '').replace(/\s/g, '').replace(',', '.')) || 0;
+    }
+
+    function updateTxNet() {
+        const amount = parseRub(document.getElementById('txAmount').value);
+        const fee    = parseRub(document.getElementById('txCommission').value);
+        const netEl  = document.getElementById('txNet');
+        if (fee > 0 && amount > 0) {
+            const net = amount - fee;
+            netEl.textContent = `Получите на руки: ${net.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ₽`;
+            netEl.style.display = 'block';
+        } else {
+            netEl.style.display = 'none';
+        }
+    }
+
+    document.getElementById('txAmount').addEventListener('input', updateTxNet);
+    document.getElementById('txCommission').addEventListener('input', updateTxNet);
+
+    document.querySelectorAll('input[name="type"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            const isWithdrawal = radio.value === 'withdrawal';
+            const btn = document.getElementById('txSubmitBtn');
+            btn.textContent = isWithdrawal ? 'Записать снятие' : 'Записать пополнение';
+            btn.style.background = isWithdrawal ? '#374151' : 'rgba(74,222,128,0.2)';
+            document.getElementById('commissionRow').style.display = isWithdrawal ? '' : 'none';
+            document.getElementById('txNet').style.display = 'none';
+        });
+    });
+</script>
+
+{% if has_data %}
+<script>
+    fetch('/chart-data')
+        .then(r => r.json())
+        .then(data => {
+            const ctx = document.getElementById('earningsChart').getContext('2d');
+
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.labels,
+                    datasets: [{
+                        label: 'Заработок (₽)',
+                        data: data.values,
+                        backgroundColor: data.values.map(v =>
+                            v > 0 ? 'rgba(108, 99, 255, 0.7)' : 'rgba(248, 113, 113, 0.7)'
+                        ),
+                        borderRadius: 4,
+                        borderSkipped: false,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#1a1d27',
+                            borderColor: '#2e3148',
+                            borderWidth: 1,
+                            titleColor: '#94a3b8',
+                            bodyColor: '#e2e8f0',
+                            callbacks: {
+                                label: ctx => `${ctx.parsed.y.toLocaleString('ru-RU', {minimumFractionDigits: 2})} ₽`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(46,49,72,0.5)' },
+                            ticks: {
+                                maxRotation: 0,
+                                color: ctx => data.types[ctx.index] === 'weekend' ? 'rgba(100,116,139,0.3)' : '#94a3b8',
+                                font: ctx => data.types[ctx.index] === 'weekend' ? { size: 9 } : { size: 10, weight: '500' },
+                            }
+                        },
+                        y: {
+                            grid: { color: 'rgba(46,49,72,0.5)' },
+                            ticks: {
+                                color: '#64748b',
+                                font: { size: 10 },
+                                callback: v => v.toLocaleString('ru-RU')
+                            }
+                        }
+                    }
+                }
+            });
+        });
+</script>
+{% endif %}
+
+</body>
+</html>
