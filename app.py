@@ -84,10 +84,10 @@ def calculate_daily_earnings():
         if days <= 0:
             continue
 
-        # Include transactions on d1 and between d1..d2, exclude transactions on d2
+        # Exclude transactions on d1 (already in bal1), include on d2 (already in bal2, need to adjust)
         adj_sum = sum(
             delta for d_str, delta in adjustment_by_date.items()
-            if d1_str <= d_str < d2_str
+            if d1_str < d_str <= d2_str
         )
 
         # Only count and assign earnings to trading days (Mon–Fri)
@@ -273,6 +273,75 @@ def chart_data():
         types.append('weekend' if d.weekday() >= 5 else 'weekday')
 
     return jsonify({'labels': labels, 'values': values, 'cumulative': cumulative, 'types': types})
+
+
+@app.route('/yearly-chart-data')
+def yearly_chart_data():
+    from calendar import monthrange as cal_monthrange
+
+    db = get_db()
+    entries = db.execute(
+        'SELECT date, balance FROM balance_entries ORDER BY date'
+    ).fetchall()
+    withdrawals_raw = db.execute(
+        'SELECT date, amount, type FROM withdrawals ORDER BY date'
+    ).fetchall()
+    db.close()
+
+    bal_by_date = [(r['date'], r['balance']) for r in entries]
+    daily = calculate_daily_earnings()
+    today = date.today()
+    TAX = 0.13
+
+    result = []
+    for i in range(11, -1, -1):
+        year = today.year
+        month = today.month - i
+        while month <= 0:
+            month += 12
+            year -= 1
+
+        _, days_in_month = cal_monthrange(year, month)
+        m_start = date(year, month, 1)
+        m_end = date(year, month, days_in_month)
+        m_start_str = m_start.isoformat()
+        m_end_str = m_end.isoformat()
+
+        earnings = sum(
+            v for d_str, v in daily.items()
+            if m_start_str <= d_str <= m_end_str
+        )
+
+        # Find bal_start: last entry on or before m_start
+        bal_start = None
+        for d_str, bal in bal_by_date:
+            if d_str <= m_start_str:
+                bal_start = bal
+
+        # Modified Dietz return %
+        return_pct = None
+        if bal_start is not None and bal_start != 0:
+            weighted_cf = 0
+            for w in withdrawals_raw:
+                w_date_str = w['date']
+                if m_start_str <= w_date_str <= m_end_str:
+                    w_d = datetime.strptime(w_date_str, '%Y-%m-%d').date()
+                    remaining = (m_end - w_d).days
+                    cf = w['amount'] if w['type'] == 'deposit' else -w['amount']
+                    weighted_cf += cf * remaining / days_in_month
+
+            weighted_balance = bal_start + weighted_cf
+            if weighted_balance != 0:
+                return_pct = round(earnings / weighted_balance * 100, 2)
+
+        result.append({
+            'label': m_start.strftime('%b %Y'),
+            'earnings': round(earnings, 2),
+            'earnings_net': round(earnings * (1 - TAX), 2),
+            'return_pct': return_pct,
+        })
+
+    return jsonify(result)
 
 
 TINKOFF_BASE = 'https://invest-public-api.tinkoff.ru/rest'
