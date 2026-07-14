@@ -464,6 +464,28 @@
         </div>
         {% endif %}
 
+        <!-- Chart A: portfolio snapshot -->
+        <div class="card-custom mb-4">
+            <div class="section-title">Портфель · нереализованный P&amp;L по позициям</div>
+            <div id="snapshotWrap">
+                <div style="text-align:center; color:var(--muted); font-size:0.85rem; padding:2rem;" id="snapshotMsg">Загрузка…</div>
+                <div style="display:none;" id="snapshotChartArea">
+                    <canvas id="snapshotChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chart B: monthly returns per stock -->
+        <div class="card-custom mb-4">
+            <div class="section-title">Доходность акций по месяцам (%, цена)</div>
+            <div id="monthlyStockWrap">
+                <div style="text-align:center; color:var(--muted); font-size:0.85rem; padding:2rem;" id="monthlyStockMsg">Загрузка…</div>
+                <div class="chart-container" style="height:280px; display:none;" id="monthlyStockChartArea">
+                    <canvas id="monthlyStockChart"></canvas>
+                </div>
+            </div>
+        </div>
+
         <!-- Forms -->
         <div class="row g-3 mb-4">
             <!-- Update Balance -->
@@ -879,6 +901,169 @@
         });
 </script>
 {% endif %}
+
+<script>
+    const PALETTE = [
+        '#6c63ff','#4ade80','#f59e0b','#f87171','#38bdf8',
+        '#a78bfa','#34d399','#fb923c','#e879f9','#94a3b8'
+    ];
+
+    // Chart A – portfolio snapshot
+    fetch('/portfolio-snapshot')
+        .then(r => r.json())
+        .then(data => {
+            const msg  = document.getElementById('snapshotMsg');
+            const area = document.getElementById('snapshotChartArea');
+
+            if (data.error) {
+                msg.textContent = 'T-Invest не настроен: ' + data.error;
+                return;
+            }
+            if (!data.length) {
+                msg.textContent = 'Нет позиций в портфеле';
+                return;
+            }
+
+            msg.style.display = 'none';
+            area.style.display = 'block';
+            // Dynamic height: 40px per bar
+            area.style.height = Math.max(200, data.length * 44) + 'px';
+
+            const ctx = document.getElementById('snapshotChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.map(d => d.ticker),
+                    datasets: [{
+                        label: 'P&L (₽)',
+                        data: data.map(d => d.pnl),
+                        backgroundColor: data.map(d => d.pnl >= 0 ? 'rgba(74,222,128,0.65)' : 'rgba(248,113,113,0.65)'),
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#1a1d27',
+                            borderColor: '#2e3148',
+                            borderWidth: 1,
+                            titleColor: '#94a3b8',
+                            bodyColor: '#e2e8f0',
+                            callbacks: {
+                                title: ctx => `${data[ctx[0].dataIndex].ticker} — ${data[ctx[0].dataIndex].name}`,
+                                label: ctx => {
+                                    const d = data[ctx.dataIndex];
+                                    return [
+                                        `P&L: ${d.pnl.toLocaleString('ru-RU', {minimumFractionDigits: 2})} ₽`,
+                                        `Стоимость: ${d.current_value.toLocaleString('ru-RU', {minimumFractionDigits: 2})} ₽`,
+                                        `Доходность: ${d.return_pct}%`,
+                                    ];
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(46,49,72,0.5)' },
+                            ticks: {
+                                color: '#64748b', font: { size: 10 },
+                                callback: v => v.toLocaleString('ru-RU')
+                            }
+                        },
+                        y: {
+                            grid: { color: 'rgba(46,49,72,0.3)' },
+                            ticks: { color: '#e2e8f0', font: { size: 11, weight: '600' } }
+                        }
+                    }
+                }
+            });
+        })
+        .catch(() => {
+            document.getElementById('snapshotMsg').textContent = 'Ошибка загрузки данных портфеля';
+        });
+
+    // Chart B – monthly returns per stock
+    fetch('/portfolio-monthly')
+        .then(r => r.json())
+        .then(data => {
+            const msg  = document.getElementById('monthlyStockMsg');
+            const area = document.getElementById('monthlyStockChartArea');
+
+            if (data.error) {
+                msg.textContent = 'T-Invest не настроен: ' + data.error;
+                return;
+            }
+            if (!data.stocks || !data.stocks.length) {
+                msg.textContent = 'Нет данных по акциям';
+                return;
+            }
+
+            msg.style.display = 'none';
+            area.style.display = 'block';
+
+            const ctx = document.getElementById('monthlyStockChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.months,
+                    datasets: data.stocks.map((s, i) => ({
+                        label: s.ticker,
+                        data: s.monthly_returns,
+                        borderColor: PALETTE[i % PALETTE.length],
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        pointBackgroundColor: PALETTE[i % PALETTE.length],
+                        tension: 0.3,
+                        spanGaps: true,
+                    }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { color: '#94a3b8', font: { size: 10 }, boxWidth: 12, padding: 12 }
+                        },
+                        tooltip: {
+                            backgroundColor: '#1a1d27',
+                            borderColor: '#2e3148',
+                            borderWidth: 1,
+                            titleColor: '#94a3b8',
+                            bodyColor: '#e2e8f0',
+                            callbacks: {
+                                label: ctx => ctx.parsed.y != null
+                                    ? `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}%`
+                                    : `${ctx.dataset.label}: —`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(46,49,72,0.5)' },
+                            ticks: { color: '#94a3b8', font: { size: 10 } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(46,49,72,0.5)' },
+                            ticks: {
+                                color: '#64748b', font: { size: 10 },
+                                callback: v => v.toFixed(1) + '%'
+                            }
+                        }
+                    }
+                }
+            });
+        })
+        .catch(() => {
+            document.getElementById('monthlyStockMsg').textContent = 'Ошибка загрузки данных по акциям';
+        });
+</script>
 
 </body>
 </html>
