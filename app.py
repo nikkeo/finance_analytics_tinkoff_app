@@ -345,6 +345,24 @@ def yearly_chart_data():
 
 
 TINKOFF_BASE = 'https://invest-public-api.tinkoff.ru/rest'
+_instrument_cache = {}
+
+
+def get_instrument_info(figi, token):
+    if figi in _instrument_cache:
+        return _instrument_cache[figi]
+    try:
+        resp = t_request(
+            '/tinkoff.public.invest.api.contract.v1.InstrumentsService/GetInstrumentBy',
+            {'idType': 'INSTRUMENT_ID_TYPE_FIGI', 'id': figi},
+            token
+        )
+        info = resp.get('instrument', {})
+        result = {'ticker': info.get('ticker', figi), 'name': info.get('name', figi)}
+    except Exception:
+        result = {'ticker': figi, 'name': figi}
+    _instrument_cache[figi] = result
+    return result
 
 
 def t_request(path, body, token):
@@ -386,6 +404,137 @@ def tinkoff_accounts():
         for a in resp.get('accounts', [])
     ]
     return jsonify({'accounts': accounts})
+
+
+@app.route('/portfolio-snapshot')
+def portfolio_snapshot():
+    try:
+        from config import T_INVEST_TOKEN, T_INVEST_ACCOUNT_ID
+    except ImportError:
+        return jsonify({'error': 'config.py не найден'}), 400
+    if not T_INVEST_TOKEN or not T_INVEST_ACCOUNT_ID:
+        return jsonify({'error': 'Токен или ID счёта не указан'}), 400
+
+    try:
+        portfolio = t_request(
+            '/tinkoff.public.invest.api.contract.v1.OperationsService/GetPortfolio',
+            {'accountId': T_INVEST_ACCOUNT_ID, 'currency': 'RUB'},
+            T_INVEST_TOKEN
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    result = []
+    for pos in portfolio.get('positions', []):
+        figi = pos.get('figi', '')
+        if not figi:
+            continue
+        quantity    = money_value(pos.get('quantity', {}))
+        cur_price   = money_value(pos.get('currentPrice', {}))
+        avg_price   = money_value(pos.get('averagePositionPrice', {}))
+        pnl         = money_value(pos.get('expectedYield', {}))
+        cur_value   = round(quantity * cur_price, 2)
+        invested    = quantity * avg_price
+        return_pct  = round(pnl / invested * 100, 2) if invested else 0
+        # Use cached name if available, fall back to FIGI
+        info = _instrument_cache.get(figi, {'ticker': figi, 'name': figi})
+        result.append({
+            'ticker': info['ticker'],
+            'name': info['name'],
+            'pnl': round(pnl, 2),
+            'current_value': cur_value,
+            'return_pct': return_pct,
+            'instrument_type': pos.get('instrumentType', ''),
+        })
+
+    result.sort(key=lambda x: x['pnl'], reverse=True)
+    return jsonify(result)
+
+
+@app.route('/portfolio-monthly')
+def portfolio_monthly():
+    try:
+        from config import T_INVEST_TOKEN, T_INVEST_ACCOUNT_ID
+    except ImportError:
+        return jsonify({'error': 'config.py не найден'}), 400
+    if not T_INVEST_TOKEN or not T_INVEST_ACCOUNT_ID:
+        return jsonify({'error': 'Токен или ID счёта не указан'}), 400
+
+    try:
+        portfolio = t_request(
+            '/tinkoff.public.invest.api.contract.v1.OperationsService/GetPortfolio',
+            {'accountId': T_INVEST_ACCOUNT_ID, 'currency': 'RUB'},
+            T_INVEST_TOKEN
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    today = date.today()
+    from_dt = (datetime.now(timezone.utc) - timedelta(days=395)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    to_dt   = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    # Build 12-month label list
+    month_keys = []
+    month_labels = []
+    for i in range(11, -1, -1):
+        yr, mo = today.year, today.month - i
+        while mo <= 0:
+            mo += 12; yr -= 1
+        month_keys.append(f'{yr}-{mo:02d}')
+        month_labels.append(date(yr, mo, 1).strftime('%b %Y'))
+
+    # Top 10 positions by current value
+    positions = sorted(
+        portfolio.get('positions', []),
+        key=lambda p: money_value(p.get('currentPrice', {})) * money_value(p.get('quantity', {})),
+        reverse=True
+    )[:5]
+
+    stocks = []
+    for pos in positions:
+        figi = pos.get('figi', '')
+        if not figi:
+            continue
+        info = _instrument_cache.get(figi, {'ticker': figi, 'name': figi})
+
+        # Fetch daily candles and aggregate into monthly returns
+        try:
+            resp = t_request(
+                '/tinkoff.public.invest.api.contract.v1.MarketDataService/GetCandles',
+                {'figi': figi, 'from': from_dt, 'to': to_dt,
+                 'interval': 'CANDLE_INTERVAL_DAY'},
+                T_INVEST_TOKEN
+            )
+        except Exception:
+            continue
+
+        # Group daily candles by YYYY-MM, collect first open and last close
+        month_open  = {}
+        month_close = {}
+        for c in resp.get('candles', []):
+            key = c.get('time', '')[:7]
+            o  = money_value(c.get('open', {}))
+            cl = money_value(c.get('close', {}))
+            if key not in month_open:
+                month_open[key] = o
+            month_close[key] = cl
+
+        monthly_returns = []
+        for key in month_keys:
+            o  = month_open.get(key)
+            cl = month_close.get(key)
+            if o and o > 0:
+                monthly_returns.append(round((cl - o) / o * 100, 2))
+            else:
+                monthly_returns.append(None)
+
+        stocks.append({
+            'ticker': info['ticker'],
+            'name': info['name'],
+            'monthly_returns': monthly_returns,
+        })
+
+    return jsonify({'months': month_labels, 'stocks': stocks})
 
 
 @app.route('/sync-tinkoff', methods=['POST'])
