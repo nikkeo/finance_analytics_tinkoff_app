@@ -1,10 +1,15 @@
 import sqlite3
+import sys
 import requests
 from datetime import datetime, timezone, timedelta
 
-from config import T_INVEST_TOKEN, T_INVEST_ACCOUNT_ID
+from settings import DB_PATH
 
-DB_PATH = '/Users/vlad/Desktop/dev/finance_app/finance.db'
+try:
+    from config import T_INVEST_TOKEN, T_INVEST_ACCOUNT_ID
+except ImportError:
+    sys.exit('config.py не найден. Скопируйте config.example.py в config.py и укажите токен.')
+
 BASE = 'https://invest-public-api.tinkoff.ru/rest'
 
 
@@ -25,6 +30,11 @@ def money_value(mv):
 
 conn = sqlite3.connect(DB_PATH, timeout=10)
 conn.execute('PRAGMA journal_mode=WAL')
+
+if not conn.execute(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='withdrawals'"
+).fetchone():
+    sys.exit(f'В базе {DB_PATH} нет нужных таблиц. Сначала запустите app.py — он создаст схему.')
 
 from_dt = (datetime.now(timezone.utc) - timedelta(days=365)).strftime('%Y-%m-%dT%H:%M:%SZ')
 to_dt = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')

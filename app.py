@@ -3,9 +3,10 @@ import sqlite3
 import requests as http_requests
 from datetime import date, timedelta, datetime, timezone
 
+from settings import DB_PATH, SECRET_KEY, DEBUG, PORT
+
 app = Flask(__name__)
-app.secret_key = 'finance-tracker-secret'
-DB_PATH = '/Users/vlad/Desktop/dev/finance_app/finance.db'
+app.secret_key = SECRET_KEY
 
 
 def init_db():
@@ -625,4 +626,4 @@ def sync_tinkoff():
 
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True, port=5001)
+    app.run(debug=DEBUG, port=PORT)

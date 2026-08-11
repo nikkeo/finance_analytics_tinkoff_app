@@ -1,8 +1,11 @@
 import sqlite3
 import json
+import os
 from datetime import date
 
-DB_PATH = "dividend_bot.db"
+# Рядом с модулем, а не в текущей рабочей директории —
+# чтобы бот находил свою базу, откуда бы его ни запустили.
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dividend_bot.db")
 
 
 def init():
