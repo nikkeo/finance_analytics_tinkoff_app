@@ -8,7 +8,15 @@ Schedule:
 
 import sys
 import os
-sys.path.insert(0, os.path.dirname(__file__))
+# abspath — чтобы бот запускался из любой рабочей директории,
+# а не только из dividend_bot/
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+try:
+    import config  # noqa: F401
+except ImportError:
+    sys.exit('config.py не найден. Скопируйте dividend_bot/config.example.py '
+             'в dividend_bot/config.py и укажите токен Telegram.')
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from datetime import date
